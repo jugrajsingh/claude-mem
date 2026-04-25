@@ -73,10 +73,40 @@ export const VECTOR_DB_DIR = join(DATA_DIR, 'vector-db');
 
 // Observer sessions directory - used as cwd for SDK queries
 // Sessions here won't appear in user's `claude --resume` for their actual projects
-export const OBSERVER_SESSIONS_DIR = join(DATA_DIR, 'observer-sessions');
+//
+// Resolved from CLAUDE_MEM_OBSERVER_SESSION_DIR setting with full priority
+// (env > settings file > default). Cached for 5s to avoid file-system thrash.
+let _observerDirCache: { value: string; loadedAt: number } | null = null;
+const OBSERVER_DIR_TTL_MS = 5_000;
 
-// Project name assigned to observer sessions (basename of OBSERVER_SESSIONS_DIR).
-// UI queries filter this out so internal worker sessions don't pollute project lists.
+export function getObserverSessionsDir(): string {
+  const now = Date.now();
+  if (!_observerDirCache || now - _observerDirCache.loadedAt > OBSERVER_DIR_TTL_MS) {
+    try {
+      const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
+      _observerDirCache = {
+        value: settings.CLAUDE_MEM_OBSERVER_SESSION_DIR || join(DATA_DIR, 'observer-sessions'),
+        loadedAt: now
+      };
+    } catch {
+      _observerDirCache = { value: join(DATA_DIR, 'observer-sessions'), loadedAt: now };
+    }
+  }
+  return _observerDirCache.value;
+}
+
+export function getObserverSessionsProject(): string {
+  return basename(getObserverSessionsDir());
+}
+
+export function invalidateObserverDirCache(): void {
+  _observerDirCache = null;
+}
+
+/** @deprecated Use getObserverSessionsDir() — this constant is computed once at module load */
+export const OBSERVER_SESSIONS_DIR = getObserverSessionsDir();
+
+/** @deprecated Use getObserverSessionsProject() — this constant is computed once at module load */
 export const OBSERVER_SESSIONS_PROJECT = basename(OBSERVER_SESSIONS_DIR);
 
 // Claude integration paths

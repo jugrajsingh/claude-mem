@@ -59,6 +59,7 @@ export interface SettingsDefaults {
   // Exclusion Settings
   CLAUDE_MEM_EXCLUDED_PROJECTS: string;  // Comma-separated glob patterns for excluded project paths
   CLAUDE_MEM_FOLDER_MD_EXCLUDE: string;  // JSON array of folder paths to exclude from CLAUDE.md generation
+  CLAUDE_MEM_OBSERVER_SESSION_DIR: string;  // Observer subprocess working dir; cwd under this path is treated as internal
   // Semantic Context Injection (per-prompt via Chroma)
   CLAUDE_MEM_SEMANTIC_INJECT: string;        // 'true' | 'false' - inject relevant observations on each prompt
   CLAUDE_MEM_SEMANTIC_INJECT_LIMIT: string;  // Max observations to inject per prompt
@@ -136,6 +137,10 @@ export class SettingsDefaultsManager {
     // Exclusion Settings
     CLAUDE_MEM_EXCLUDED_PROJECTS: '',  // Comma-separated glob patterns for excluded project paths
     CLAUDE_MEM_FOLDER_MD_EXCLUDE: '[]',  // JSON array of folder paths to exclude from CLAUDE.md generation
+    CLAUDE_MEM_OBSERVER_SESSION_DIR: join(
+      process.env.CLAUDE_MEM_DATA_DIR ?? join(homedir(), '.claude-mem'),
+      'observer-sessions'
+    ),  // Default: <DATA_DIR>/observer-sessions; anything cwd under this is internal
     // Semantic Context Injection (per-prompt via Chroma vector search)
     CLAUDE_MEM_SEMANTIC_INJECT: 'false',             // Inject relevant past observations on every UserPromptSubmit (experimental, disabled by default)
     CLAUDE_MEM_SEMANTIC_INJECT_LIMIT: '5',           // Top-N most relevant observations to inject per prompt
