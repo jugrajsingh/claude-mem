@@ -305,6 +305,17 @@ Settings are managed in `~/.claude-mem/settings.json` (auto-created with default
 
 See the **[Configuration Guide](https://docs.claude-mem.ai/configuration)** for all available settings and examples.
 
+### Project exclusion
+
+| Setting | Type | Description | Default |
+|---|---|---|---|
+| `CLAUDE_MEM_EXCLUDED_PROJECTS` | csv-globs | Comma-separated glob patterns. Matched against both the project's full path **and** its basename — bare names like `secrets` and single-star patterns like `*scratch*` work as users intuitively expect. | `''` |
+| `CLAUDE_MEM_OBSERVER_SESSION_DIR` | path | Observer subprocess working directory. Anything whose `cwd` resolves under this path is treated as internal mechanism — never recorded as user content. Distinct from `CLAUDE_MEM_EXCLUDED_PROJECTS` (which targets user projects). | `<CLAUDE_MEM_DATA_DIR>/observer-sessions` |
+
+To scrub legacy rows that accumulated before these gates were in place, run
+`npx claude-mem cleanup --internal --user-excluded --dry-run` for a preview, then
+re-run with `--yes` to apply.
+
 ### Mode & Language Configuration
 
 Claude-Mem supports multiple workflow modes and languages via the `CLAUDE_MEM_MODE` setting.

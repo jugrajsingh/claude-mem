@@ -4,6 +4,62 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+- **Observer subprocess no longer leaks `observer-sessions` rows into user-content
+  tables.** When the observer's Claude SDK call ran, its underlying `claude`
+  subprocess fired hooks back into claude-mem, registering itself as a user session
+  and creating phantom rows in `sdk_sessions`, `user_prompts`, and `session_summaries`
+  tagged `project='observer-sessions'`. These rows were embedded into Chroma
+  (incurring OpenAI cost), surfaced in viewer detail pages, and bloated SQLite.
+  Fixes #2104, #2093. Partial fix for #2118 (SSEBroadcaster is tracked separately).
+- **`CLAUDE_MEM_EXCLUDED_PROJECTS` glob now matches by basename too.** Previously,
+  the pattern `*observer-sessions*` (or any single-star glob without slashes)
+  silently failed against absolute cwd paths because `*` does not cross `/`.
+  Patterns are now also tested against `path.basename(cwd)`, so bare names and
+  single-star patterns work as users intuitively expect. Existing globstar (`**`)
+  patterns are unaffected.
+
+### Added
+- **`CLAUDE_MEM_OBSERVER_SESSION_DIR`** setting / env var — path to the observer's
+  internal working directory. Default: `<CLAUDE_MEM_DATA_DIR>/observer-sessions`
+  (backwards compatible). Anything whose `cwd` resolves under this directory is
+  treated as internal mechanism — no SQLite write, no Chroma sync, no viewer
+  display. Distinct from `CLAUDE_MEM_EXCLUDED_PROJECTS` which targets user
+  projects.
+- **`claude-mem cleanup`** command — scrub legacy rows from SQLite and matching
+  Chroma documents. Flags:
+  - `--internal` — delete rows whose project matches the observer-dir basename
+  - `--user-excluded` — delete rows matching `CLAUDE_MEM_EXCLUDED_PROJECTS` patterns
+  - `--dry-run` — report counts only (default unless `--yes`)
+  - `--yes` — actually delete (idempotent, transactional)
+
+  Operates atomically on SQLite; Chroma cleanup is best-effort (warns and
+  continues on failure).
+
+### Changed
+- **`CLAUDE_MEM_EXCLUDED_PROJECTS` now applies system-wide.** Previously the gate
+  only fired in three CLI hook handlers (session-init, observation, file-context).
+  It now also blocks HTTP route writes (SessionRoutes), Chroma sync (ChromaSync),
+  and viewer reads (DataRoutes LIST + DETAIL via PaginationHelper). Backwards
+  compatible: existing patterns continue to work and now cover more surfaces.
+
+### Reserved
+- The basename of `CLAUDE_MEM_OBSERVER_SESSION_DIR` (default: `observer-sessions`)
+  is reserved as the internal project name. Naming a real user project literally
+  `observer-sessions` is unsupported. Relocate the observer dir via the new
+  setting if needed.
+
+### Architectural note
+`sdk_sessions` was always intended as one-row-per-user-content-session. The
+observer's SDK call captures its session ID into the same row's
+`memory_session_id` field — there is no separate "observer session" entity by
+design. Rows that previously appeared with `project='observer-sessions'` were a
+leak from the observer subprocess's own hook firing, not intentional internal
+accounting. This release closes that leak. See
+`docs/SESSION_ID_ARCHITECTURE.md` § "Internal vs User Sessions".
+
 ## [12.3.9] - 2026-04-22
 
 ## Highlights

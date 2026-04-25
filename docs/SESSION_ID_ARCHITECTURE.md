@@ -243,9 +243,78 @@ JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
 WHERE s.content_session_id = 'your-session-id';
 ```
 
+## Internal vs User Sessions
+
+claude-mem records exactly **one `sdk_sessions` row per user content session**.
+The observer's SDK call captures its own session ID into the user's existing row
+(via `memory_session_id`) — there is no separate "observer session" entity by
+design.
+
+### The historical leak
+
+The observer's SDK call uses `cwd: OBSERVER_SESSIONS_DIR` to isolate the spawned
+`claude` subprocess from the user's `claude --resume` list (PR #832). But that
+subprocess inherited the same Claude Code hooks → it fired its own
+`UserPromptSubmit` → those hooks re-entered claude-mem and registered the
+observer's run as if it were a user session, creating phantom rows tagged
+`project='observer-sessions'` in `sdk_sessions`, `user_prompts`, and
+`session_summaries`. Those rows then got embedded into Chroma (incurring
+embedding cost), surfaced in viewer detail pages, and bloated SQLite. See
+upstream issues #2104, #2093, #2118 for user reports.
+
+### The fix
+
+`CLAUDE_MEM_OBSERVER_SESSION_DIR` declares the observer's internal working
+directory. Every claude-mem entry point — CLI hook handlers (`session-init`,
+`observation`, `file-context`), HTTP routes (`SessionRoutes`), Chroma sync
+(`ChromaSync`), and viewer reads (`DataRoutes` LIST + DETAIL via
+`PaginationHelper`) — gates on `shouldSkipForClaudeMem({cwd, project})`.
+
+The composite gate returns true if any of the following hold:
+
+1. `cwd` resolves under `CLAUDE_MEM_OBSERVER_SESSION_DIR`, OR
+2. project equals the basename of that dir, OR
+3. `cwd` matches a `CLAUDE_MEM_EXCLUDED_PROJECTS` pattern (full path or basename), OR
+4. project matches a `CLAUDE_MEM_EXCLUDED_PROJECTS` pattern.
+
+This is distinct from `CLAUDE_MEM_EXCLUDED_PROJECTS` — that setting targets
+*user* projects (e.g. paid client work that shouldn't be recorded);
+`CLAUDE_MEM_OBSERVER_SESSION_DIR` targets the *internal mechanism*. Both gates
+fire at every layer.
+
+### Glob basename matching
+
+Previously, `*observer-sessions*` silently failed against absolute paths because
+`*` does not cross `/` (becomes `[^/]*`). Patterns are now also tested against
+`path.basename(cwd)` so bare names and single-star patterns work as users
+intuitively expect. Globstar (`**`) patterns are unaffected.
+
+### Naming reservation
+
+The basename of `CLAUDE_MEM_OBSERVER_SESSION_DIR` (default: `observer-sessions`)
+is reserved as the internal project name. Naming a real user project literally
+`observer-sessions` is unsupported — relocate the observer dir via the new
+setting if needed.
+
+### Cleaning up legacy rows
+
+Pre-fix deployments accumulated rows tagged `project='observer-sessions'`
+and possibly user-excluded projects (when those gates didn't fire at every
+layer). Run:
+
+```bash
+npx claude-mem cleanup --internal --user-excluded --dry-run    # preview
+npx claude-mem cleanup --internal --user-excluded --yes        # apply
+```
+
+The cleanup is transactional on SQLite and best-effort on Chroma (warns and
+continues on Chroma failure).
+
 ## References
 
 - **Implementation**: `src/services/worker/SDKAgent.ts` (lines 72-94)
 - **Session Store**: `src/services/sqlite/SessionStore.ts`
 - **Tests**: `tests/session_id_usage_validation.test.ts`
 - **Related Tests**: `tests/session_id_refactor.test.ts`
+- **Composite gate**: `src/utils/project-filter.ts` (`shouldSkipForClaudeMem`)
+- **CLI cleanup**: `src/services/infrastructure/CleanupCommand.ts`
