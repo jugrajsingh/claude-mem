@@ -20,6 +20,7 @@ import type { WorkerService } from '../../../worker-service.js';
 import { BaseRouteHandler } from '../BaseRouteHandler.js';
 import { normalizePlatformSource } from '../../../../shared/platform-source.js';
 import { getObservationsByFilePath } from '../../../sqlite/observations/get.js';
+import { shouldSkipForClaudeMem } from '../../../../utils/project-filter.js';
 
 export class DataRoutes extends BaseRouteHandler {
   constructor(
@@ -108,6 +109,12 @@ export class DataRoutes extends BaseRouteHandler {
       return;
     }
 
+    // Hide rows whose project is internal or user-excluded
+    if (shouldSkipForClaudeMem({ project: observation.project })) {
+      this.notFound(res, `Observation #${id} not found`);
+      return;
+    }
+
     res.json(observation);
   });
 
@@ -130,7 +137,10 @@ export class DataRoutes extends BaseRouteHandler {
     const db = this.dbManager.getSessionStore().db;
     const observations = getObservationsByFilePath(db, filePath, { projects, limit });
 
-    res.json({ observations, count: observations.length });
+    // Hide rows whose project is internal or user-excluded
+    const filtered = observations.filter(o => !shouldSkipForClaudeMem({ project: o.project }));
+
+    res.json({ observations: filtered, count: filtered.length });
   });
 
   /**
@@ -165,7 +175,10 @@ export class DataRoutes extends BaseRouteHandler {
     const store = this.dbManager.getSessionStore();
     const observations = store.getObservationsByIds(ids, { orderBy, limit, project });
 
-    res.json(observations);
+    // Hide rows whose project is internal or user-excluded
+    const filtered = observations.filter(o => !shouldSkipForClaudeMem({ project: o.project }));
+
+    res.json(filtered);
   });
 
   /**
@@ -180,6 +193,12 @@ export class DataRoutes extends BaseRouteHandler {
     const sessions = store.getSessionSummariesByIds([id]);
 
     if (sessions.length === 0) {
+      this.notFound(res, `Session #${id} not found`);
+      return;
+    }
+
+    // Hide rows whose project is internal or user-excluded
+    if (shouldSkipForClaudeMem({ project: sessions[0].project })) {
       this.notFound(res, `Session #${id} not found`);
       return;
     }
@@ -207,7 +226,11 @@ export class DataRoutes extends BaseRouteHandler {
 
     const store = this.dbManager.getSessionStore();
     const sessions = store.getSdkSessionsBySessionIds(memorySessionIds);
-    res.json(sessions);
+
+    // Hide rows whose project is internal or user-excluded
+    const filtered = sessions.filter(s => !shouldSkipForClaudeMem({ project: s.project }));
+
+    res.json(filtered);
   });
 
   /**
@@ -222,6 +245,12 @@ export class DataRoutes extends BaseRouteHandler {
     const prompts = store.getUserPromptsByIds([id]);
 
     if (prompts.length === 0) {
+      this.notFound(res, `Prompt #${id} not found`);
+      return;
+    }
+
+    // Hide rows whose project is internal or user-excluded
+    if (shouldSkipForClaudeMem({ project: prompts[0].project })) {
       this.notFound(res, `Prompt #${id} not found`);
       return;
     }

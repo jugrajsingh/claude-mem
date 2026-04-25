@@ -9,7 +9,9 @@
 
 import { DatabaseManager } from './DatabaseManager.js';
 import { logger } from '../../utils/logger.js';
-import { OBSERVER_SESSIONS_PROJECT } from '../../shared/paths.js';
+import path from 'path';
+import { getObserverSessionsDir, USER_SETTINGS_PATH } from '../../shared/paths.js';
+import { SettingsDefaultsManager } from '../../shared/SettingsDefaultsManager.js';
 import type { PaginatedResult, Observation, Summary, UserPrompt } from '../worker-types.js';
 
 export class PaginationHelper {
@@ -17,6 +19,39 @@ export class PaginationHelper {
 
   constructor(dbManager: DatabaseManager) {
     this.dbManager = dbManager;
+  }
+
+  /**
+   * Append SQL conditions that exclude internal observer-session rows AND any
+   * rows whose `project` matches a user-defined CLAUDE_MEM_EXCLUDED_PROJECTS
+   * pattern. Uses parameterized GLOB to avoid injection.
+   *
+   * @param alias - Table alias used in the surrounding query (e.g. 'o', 'ss', 's').
+   * @param conditions - The conditions array being built.
+   * @param params - The params array being built.
+   */
+  private addExclusionClauses(alias: string, conditions: string[], params: unknown[]): void {
+    // Internal project name (observer subprocess basename, derived from settings)
+    let internalProject: string;
+    let userExcluded: string[];
+    try {
+      internalProject = path.basename(getObserverSessionsDir());
+      const raw = SettingsDefaultsManager
+        .loadFromFile(USER_SETTINGS_PATH)
+        .CLAUDE_MEM_EXCLUDED_PROJECTS ?? '';
+      userExcluded = raw.split(',').map(p => p.trim()).filter(Boolean);
+    } catch {
+      internalProject = 'observer-sessions';
+      userExcluded = [];
+    }
+
+    conditions.push(`${alias}.project != ?`);
+    params.push(internalProject);
+
+    for (const pattern of userExcluded) {
+      conditions.push(`${alias}.project NOT GLOB ?`);
+      params.push(pattern);
+    }
   }
 
   /**
@@ -111,9 +146,9 @@ export class PaginationHelper {
       conditions.push('(o.project = ? OR o.merged_into_project = ?)');
       params.push(project, project);
     } else {
-      // Hide internal observer-session rows from the unfiltered UI list.
-      conditions.push('o.project != ?');
-      params.push(OBSERVER_SESSIONS_PROJECT);
+      // Hide internal observer-session rows AND any user-excluded rows from
+      // the unfiltered UI list.
+      this.addExclusionClauses('o', conditions, params);
     }
     if (platformSource) {
       conditions.push(`COALESCE(s.platform_source, 'claude') = ?`);
@@ -173,8 +208,8 @@ export class PaginationHelper {
       conditions.push('(ss.project = ? OR ss.merged_into_project = ?)');
       params.push(project, project);
     } else {
-      // Hide internal observer-session rows from the unfiltered UI list.
-      conditions.push("ss.project != 'observer-sessions'");
+      // Hide internal observer-session rows AND any user-excluded rows.
+      this.addExclusionClauses('ss', conditions, params);
     }
 
     if (platformSource) {
@@ -227,8 +262,8 @@ export class PaginationHelper {
       conditions.push('s.project = ?');
       params.push(project);
     } else {
-      // Hide internal observer-session rows from the unfiltered UI list.
-      conditions.push("s.project != 'observer-sessions'");
+      // Hide internal observer-session rows AND any user-excluded rows.
+      this.addExclusionClauses('s', conditions, params);
     }
 
     if (platformSource) {

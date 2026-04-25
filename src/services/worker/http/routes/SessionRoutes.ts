@@ -21,6 +21,7 @@ import { SessionCompletionHandler } from '../../session/SessionCompletionHandler
 import { PrivacyCheckValidator } from '../../validation/PrivacyCheckValidator.js';
 import { SettingsDefaultsManager } from '../../../../shared/SettingsDefaultsManager.js';
 import { USER_SETTINGS_PATH } from '../../../../shared/paths.js';
+import { shouldSkipForClaudeMem } from '../../../../utils/project-filter.js';
 import { getProcessBySession, ensureProcessExit } from '../../ProcessRegistry.js';
 import { getProjectContext } from '../../../../utils/project-name.js';
 import { normalizePlatformSource } from '../../../../shared/platform-source.js';
@@ -608,6 +609,15 @@ export class SessionRoutes extends BaseRouteHandler {
       return this.badRequest(res, 'Missing contentSessionId');
     }
 
+    // Defense-in-depth: short-circuit if cwd is internal (observer subprocess)
+    // or project is user-excluded. Hook-level gate already exists; this catches
+    // any path that bypasses the hook (e.g. mis-installed hooks, external clients).
+    if (shouldSkipForClaudeMem({ cwd, project })) {
+      logger.debug('HTTP', 'observations: skipping for internal/excluded project', { cwd, project });
+      res.status(204).send();
+      return;
+    }
+
     // Load skip tools from settings
     const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
     const skipTools = new Set(settings.CLAUDE_MEM_SKIP_TOOLS.split(',').map(t => t.trim()).filter(Boolean));
@@ -868,6 +878,15 @@ export class SessionRoutes extends BaseRouteHandler {
 
     // Validate required parameters
     if (!this.validateRequired(req, res, ['contentSessionId'])) {
+      return;
+    }
+
+    // Defense-in-depth: short-circuit if project is internal (observer subprocess)
+    // or user-excluded. Hook-level gate already exists; this catches any path that
+    // bypasses the hook (e.g. mis-installed hooks, external clients).
+    if (shouldSkipForClaudeMem({ project })) {
+      logger.debug('HTTP', 'session-init: skipping for internal/excluded project', { project, contentSessionId });
+      res.status(204).send();
       return;
     }
 

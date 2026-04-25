@@ -17,6 +17,7 @@ import { ParsedObservation, ParsedSummary } from '../../sdk/parser.js';
 import { SessionStore } from '../sqlite/SessionStore.js';
 import { logger } from '../../utils/logger.js';
 import { parseFileList } from '../sqlite/observations/files.js';
+import { shouldSkipForClaudeMem } from '../../utils/project-filter.js';
 
 interface ChromaDocument {
   id: string;
@@ -345,6 +346,11 @@ export class ChromaSync {
     createdAtEpoch: number,
     discoveryTokens: number = 0
   ): Promise<void> {
+    if (shouldSkipForClaudeMem({ project })) {
+      logger.debug('CHROMA_SYNC', 'Skipping observation (project internal or excluded)', { observationId, project });
+      return;
+    }
+
     // Convert ParsedObservation to StoredObservation format
     const stored: StoredObservation = {
       id: observationId,
@@ -390,6 +396,11 @@ export class ChromaSync {
     createdAtEpoch: number,
     discoveryTokens: number = 0
   ): Promise<void> {
+    if (shouldSkipForClaudeMem({ project })) {
+      logger.debug('CHROMA_SYNC', 'Skipping summary (project internal or excluded)', { summaryId, project });
+      return;
+    }
+
     // Convert ParsedSummary to StoredSummary format
     const stored: StoredSummary = {
       id: summaryId,
@@ -450,6 +461,11 @@ export class ChromaSync {
     promptNumber: number,
     createdAtEpoch: number
   ): Promise<void> {
+    if (shouldSkipForClaudeMem({ project })) {
+      logger.debug('CHROMA_SYNC', 'Skipping user prompt (project internal or excluded)', { promptId, project });
+      return;
+    }
+
     // Create StoredUserPrompt format
     const stored: StoredUserPrompt = {
       id: promptId,
@@ -553,6 +569,12 @@ export class ChromaSync {
    */
   async ensureBackfilled(projectOverride?: string): Promise<void> {
     const backfillProject = projectOverride ?? this.project;
+
+    if (shouldSkipForClaudeMem({ project: backfillProject })) {
+      logger.debug('CHROMA_SYNC', 'Skipping backfill (project internal or excluded)', { project: backfillProject });
+      return;
+    }
+
     logger.info('CHROMA_SYNC', 'Starting smart backfill', { project: backfillProject });
 
     await this.ensureCollectionExists();

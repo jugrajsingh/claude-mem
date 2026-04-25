@@ -15,7 +15,7 @@ import { CorpusRenderer } from './CorpusRenderer.js';
 import type { CorpusFile, QueryResult } from './types.js';
 import { logger } from '../../../utils/logger.js';
 import { SettingsDefaultsManager } from '../../../shared/SettingsDefaultsManager.js';
-import { USER_SETTINGS_PATH, OBSERVER_SESSIONS_DIR, ensureDir } from '../../../shared/paths.js';
+import { USER_SETTINGS_PATH, getObserverSessionsDir, ensureDir } from '../../../shared/paths.js';
 import { buildIsolatedEnv } from '../../../shared/EnvManager.js';
 import { sanitizeEnv } from '../../../supervisor/env-sanitizer.js';
 
@@ -68,7 +68,8 @@ export class KnowledgeAgent {
       'Acknowledge what you\'ve received. Summarize the key themes and topics you can answer questions about.'
     ].join('\n');
 
-    ensureDir(OBSERVER_SESSIONS_DIR);
+    const observerDir = getObserverSessionsDir();
+    ensureDir(observerDir);
     const claudePath = this.findClaudeExecutable();
     const isolatedEnv = sanitizeEnv(buildIsolatedEnv());
 
@@ -76,7 +77,7 @@ export class KnowledgeAgent {
       prompt: primePrompt,
       options: {
         model: this.getModelId(),
-        cwd: OBSERVER_SESSIONS_DIR,
+        cwd: observerDir,
         disallowedTools: KNOWLEDGE_AGENT_DISALLOWED_TOOLS,
         pathToClaudeCodeExecutable: claudePath,
         env: isolatedEnv
@@ -183,7 +184,8 @@ export class KnowledgeAgent {
    * Execute a single query against a primed session via V1 SDK resume.
    */
   private async executeQuery(corpus: CorpusFile, question: string): Promise<QueryResult> {
-    ensureDir(OBSERVER_SESSIONS_DIR);
+    const observerDir = getObserverSessionsDir();
+    ensureDir(observerDir);
     const claudePath = this.findClaudeExecutable();
     const isolatedEnv = sanitizeEnv(buildIsolatedEnv());
 
@@ -192,7 +194,7 @@ export class KnowledgeAgent {
       options: {
         model: this.getModelId(),
         resume: corpus.session_id!,
-        cwd: OBSERVER_SESSIONS_DIR,
+        cwd: observerDir,
         disallowedTools: KNOWLEDGE_AGENT_DISALLOWED_TOOLS,
         pathToClaudeCodeExecutable: claudePath,
         env: isolatedEnv
