@@ -196,6 +196,40 @@ export async function runSearchCommand(queryParts: string[]): Promise<void> {
 }
 
 /**
+ * Run the cleanup command via Bun. Scrubs legacy rows from SQLite (and best-effort
+ * matching Chroma docs) for internal observer-session rows and/or user-excluded
+ * projects.
+ */
+export function runCleanupCommand(extraArgs: string[] = []): void {
+  ensureInstalledOrExit();
+  const bunPath = resolveBunOrExit();
+  const workerScript = workerServiceScriptPath();
+
+  if (!existsSync(workerScript)) {
+    console.error(pc.red(`Worker script not found at: ${workerScript}`));
+    console.error('The installation may be corrupted. Try: npx claude-mem install');
+    process.exit(1);
+  }
+
+  const args = [workerScript, 'cleanup', ...extraArgs];
+
+  const child = spawn(bunPath, args, {
+    stdio: 'inherit',
+    cwd: marketplaceDirectory(),
+    env: process.env,
+  });
+
+  child.on('error', (error) => {
+    console.error(pc.red(`Failed to start Bun: ${error.message}`));
+    process.exit(1);
+  });
+
+  child.on('close', (exitCode) => {
+    process.exit(exitCode ?? 0);
+  });
+}
+
+/**
  * Start the transcript watcher via Bun.
  */
 export function runTranscriptWatchCommand(): void {

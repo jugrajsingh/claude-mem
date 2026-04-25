@@ -61,6 +61,7 @@ import {
 } from './infrastructure/HealthMonitor.js';
 import { performGracefulShutdown } from './infrastructure/GracefulShutdown.js';
 import { adoptMergedWorktrees, adoptMergedWorktreesForAllKnownRepos } from './infrastructure/WorktreeAdoption.js';
+import { runCleanup } from './infrastructure/CleanupCommand.js';
 
 // Server imports
 import { Server } from './server/Server.js';
@@ -1374,6 +1375,31 @@ async function main() {
       const result = await cleanClaudeMd(dryRun);
       process.exit(result);
       break;
+    }
+
+    case 'cleanup': {
+      const internal = process.argv.includes('--internal');
+      const userExcluded = process.argv.includes('--user-excluded');
+      const yes = process.argv.includes('--yes');
+      const dryRunFlag = process.argv.includes('--dry-run');
+
+      if (!internal && !userExcluded) {
+        console.error('Usage: cleanup [--internal] [--user-excluded] [--dry-run | --yes]');
+        console.error('  --internal        delete rows whose project matches the observer-dir basename');
+        console.error('  --user-excluded   delete rows matching CLAUDE_MEM_EXCLUDED_PROJECTS patterns');
+        console.error('  --dry-run         report counts only (default unless --yes)');
+        console.error('  --yes             actually delete (idempotent, transactional)');
+        process.exit(1);
+      }
+
+      const dryRun = dryRunFlag || !yes;
+      try {
+        await runCleanup({ internal, userExcluded, dryRun, yes });
+        process.exit(0);
+      } catch (err) {
+        console.error('Cleanup failed:', err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
     }
 
     case 'adopt': {
