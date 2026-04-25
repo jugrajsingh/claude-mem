@@ -11,9 +11,7 @@ import { logger } from '../../utils/logger.js';
 import { parseJsonArray } from '../../shared/timeline-formatting.js';
 import { statSync } from 'fs';
 import path from 'path';
-import { isProjectExcluded } from '../../utils/project-filter.js';
-import { SettingsDefaultsManager } from '../../shared/SettingsDefaultsManager.js';
-import { USER_SETTINGS_PATH } from '../../shared/paths.js';
+import { shouldSkipForClaudeMem } from '../../utils/project-filter.js';
 import { getProjectContext } from '../../utils/project-name.js';
 
 /** Skip the gate for files smaller than this — timeline overhead exceeds file read cost. */
@@ -207,10 +205,9 @@ export const fileContextHandler: EventHandler = {
       logger.debug('HOOK', 'File stat failed, proceeding with gate', { error: err instanceof Error ? err.message : String(err) });
     }
 
-    // Check if project is excluded from tracking
-    const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
-    if (input.cwd && isProjectExcluded(input.cwd, settings.CLAUDE_MEM_EXCLUDED_PROJECTS)) {
-      logger.debug('HOOK', 'Project excluded from tracking, skipping file context', { cwd: input.cwd });
+    // Skip if cwd is internal (observer subprocess) or project is user-excluded.
+    if (shouldSkipForClaudeMem({ cwd: input.cwd })) {
+      logger.debug('HOOK', 'file-context: project skipped (internal or excluded)', { cwd: input.cwd });
       return { continue: true, suppressOutput: true };
     }
 

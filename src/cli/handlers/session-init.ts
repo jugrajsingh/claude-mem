@@ -9,7 +9,7 @@ import { ensureWorkerRunning, workerHttpRequest } from '../../shared/worker-util
 import { getProjectContext } from '../../utils/project-name.js';
 import { logger } from '../../utils/logger.js';
 import { HOOK_EXIT_CODES } from '../../shared/hook-constants.js';
-import { isProjectExcluded } from '../../utils/project-filter.js';
+import { shouldSkipForClaudeMem } from '../../utils/project-filter.js';
 import { SettingsDefaultsManager } from '../../shared/SettingsDefaultsManager.js';
 import { USER_SETTINGS_PATH } from '../../shared/paths.js';
 import { normalizePlatformSource } from '../../shared/platform-source.js';
@@ -53,11 +53,10 @@ export const sessionInitHandler: EventHandler = {
       return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
     }
 
-    // Check if project is excluded from tracking
-    const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
-    if (cwd && isProjectExcluded(cwd, settings.CLAUDE_MEM_EXCLUDED_PROJECTS)) {
-      logger.info('HOOK', 'Project excluded from tracking', { cwd });
-      return { continue: true, suppressOutput: true };
+    // Skip if cwd is internal (observer subprocess) or project is user-excluded.
+    if (shouldSkipForClaudeMem({ cwd })) {
+      logger.info('HOOK', 'session-init: project skipped (internal or excluded)', { cwd });
+      return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
     }
 
     // Handle image-only prompts (where text prompt is empty/undefined)
@@ -155,6 +154,7 @@ export const sessionInitHandler: EventHandler = {
     // Semantic context injection: query Chroma for relevant past observations
     // and inject as additionalContext so Claude receives relevant memory each prompt.
     // Controlled by CLAUDE_MEM_SEMANTIC_INJECT setting (default: true).
+    const settings = SettingsDefaultsManager.loadFromFile(USER_SETTINGS_PATH);
     const semanticInject =
       String(settings.CLAUDE_MEM_SEMANTIC_INJECT).toLowerCase() === 'true';
     let additionalContext = '';

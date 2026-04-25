@@ -36,6 +36,11 @@ mock.module('../../src/utils/project-name.js', () => ({
 
 mock.module('../../src/utils/project-filter.js', () => ({
   isProjectExcluded: () => false,
+  isInternalSessionCwd: () => false,
+  isInternalSessionProject: () => false,
+  isProjectExcludedFromAll: () => false,
+  shouldSkipForClaudeMem: () => false,
+  invalidateExcludedCache: () => {},
 }));
 
 // Import after mocks
